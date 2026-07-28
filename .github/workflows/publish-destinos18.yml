@@ -1,0 +1,36 @@
+name: Publish Destinos 18 flashcards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-destinos18.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download completed flashcard webpage
+        run: |
+          mkdir -p docs/destinos18
+          curl -L --fail --retry 3 --retry-delay 2 "https://at.adobe.com/oXdyY7LW9k8fK88K" -o docs/destinos18/index.html
+          FILE_SIZE=$(wc -c < docs/destinos18/index.html)
+          echo "Downloaded ${FILE_SIZE} bytes"
+          test "${FILE_SIZE}" -gt 10000000
+          touch docs/.nojekyll
+
+      - name: Commit hosted webpage
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/destinos18/index.html docs/.nojekyll
+          git diff --cached --quiet && exit 0
+          git commit -m "Publish Destinos Episode 18 audio flashcards"
+          git push
