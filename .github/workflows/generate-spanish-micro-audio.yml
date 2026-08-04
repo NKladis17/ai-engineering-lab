@@ -22,8 +22,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install neural text-to-speech
-        run: pip install --disable-pip-version-check edge-tts
+      - name: Install audio tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install --disable-pip-version-check edge-tts
 
       - name: Generate six Spanish recordings
         shell: bash
