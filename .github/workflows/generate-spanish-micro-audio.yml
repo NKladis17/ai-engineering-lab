@@ -85,7 +85,42 @@ jobs:
           }
           JSON
 
-      - name: Validate audio files
+      - name: Build one self-contained HTML file
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://at.adobe.com/2r6n06jdsKq7O5LU' \
+            -o docs/spanish-micro-learning/index.template.html
+
+          grep -q 'Spanish Micro-Learning Cards 1–6' docs/spanish-micro-learning/index.template.html
+
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          root = Path('docs/spanish-micro-learning')
+          template = root / 'index.template.html'
+          html = template.read_text(encoding='utf-8')
+
+          for card_id in range(1, 7):
+              audio_path = root / 'audio' / f'card_{card_id:02d}.mp3'
+              encoded = base64.b64encode(audio_path.read_bytes()).decode('ascii')
+              remote = (
+                  'https://raw.githubusercontent.com/NKladis17/ai-engineering-lab/'
+                  f'main/docs/spanish-micro-learning/audio/card_{card_id:02d}.mp3'
+              )
+              replacement = f'data:audio/mpeg;base64,{encoded}'
+              if remote not in html:
+                  raise RuntimeError(f'Missing audio URL for Card {card_id}')
+              html = html.replace(remote, replacement, 1)
+
+          output = root / 'index.html'
+          output.write_text(html, encoding='utf-8')
+          template.unlink()
+          PY
+
+      - name: Validate audio and webpage
         shell: bash
         run: |
           set -euo pipefail
@@ -94,14 +129,25 @@ jobs:
             test "$(wc -c < "$file")" -gt 15000
             ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file"
           done
+          test "$(grep -o 'data:audio/mpeg;base64,' docs/spanish-micro-learning/index.html | wc -l)" -eq 6
+          ! grep -q 'raw.githubusercontent.com' docs/spanish-micro-learning/index.html
+          test "$(wc -c < docs/spanish-micro-learning/index.html)" -gt 500000
 
-      - name: Commit generated audio
+      - name: Commit completed deck
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/spanish-micro-learning/audio
+          git add docs/spanish-micro-learning
           git diff --cached --quiet && exit 0
-          git commit -m 'Add neural Spanish audio for micro-learning cards 1-6 [skip ci]'
+          git commit -m 'Complete Spanish micro-learning cards 1-6 with neural audio [skip ci]'
           git push
+
+      - name: Upload completed HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spanish-Micro-Learning-Cards-1-6
+          path: docs/spanish-micro-learning/index.html
+          if-no-files-found: error
+          retention-days: 30
