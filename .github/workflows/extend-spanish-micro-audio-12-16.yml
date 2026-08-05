@@ -1,0 +1,145 @@
+name: Extend Spanish micro-learning deck to 16 cards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/extend-spanish-micro-audio-12-16.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install neural speech and audio tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          pip install --disable-pip-version-check edge-tts
+
+      - name: Generate neural audio for Cards 12-16
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/spanish-micro-learning/audio
+
+          python - <<'PY'
+          import asyncio
+          from pathlib import Path
+          import edge_tts
+
+          voice = 'es-ES-AlvaroNeural'
+          sentences = {
+              12: 'No es por llevarte la contraria, pero creo que estamos partiendo de una premisa equivocada.',
+              13: 'En principio puedo encargarme, siempre que me confirmes los detalles antes del viernes.',
+              14: 'Visto con perspectiva, quizá habría sido mejor esperar a tener toda la información.',
+              15: 'Antes de seguir, me gustaría asegurarme de que estamos hablando de lo mismo.',
+              16: 'Por mucho que lo intente, todavía me cuesta expresarlo con la precisión que quisiera.',
+          }
+
+          async def make(card_id: int, text: str) -> None:
+              target = Path('docs/spanish-micro-learning/audio') / f'card_{card_id:02d}_raw.mp3'
+              speech = edge_tts.Communicate(
+                  text=text,
+                  voice=voice,
+                  rate='+0%',
+                  volume='+0%',
+                  pitch='-2Hz',
+              )
+              await speech.save(str(target))
+
+          async def main() -> None:
+              for card_id, text in sentences.items():
+                  await make(card_id, text)
+
+          asyncio.run(main())
+          PY
+
+          for id in 12 13 14 15 16; do
+            raw="docs/spanish-micro-learning/audio/card_${id}_raw.mp3"
+            final="docs/spanish-micro-learning/audio/card_${id}.mp3"
+            ffmpeg -hide_banner -loglevel error -y -i "$raw" \
+              -af "silenceremove=start_periods=1:start_silence=0.04:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_silence=0.10:start_threshold=-50dB,areverse,loudnorm=I=-16:TP=-1.5:LRA=8" \
+              -codec:a libmp3lame -b:a 192k "$final"
+            rm "$raw"
+          done
+
+      - name: Download the 16-card template
+        run: |
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://at.adobe.com/rE7EYhln5TWgn9qw' \
+            -o docs/spanish-micro-learning/index-1-16.template.html
+          grep -q 'Spanish Micro-Learning Cards 1–16' docs/spanish-micro-learning/index-1-16.template.html
+
+      - name: Embed Cards 12-16 audio
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          root = Path('docs/spanish-micro-learning')
+          template = root / 'index-1-16.template.html'
+          html = template.read_text(encoding='utf-8')
+
+          for card_id in range(12, 17):
+              audio_path = root / 'audio' / f'card_{card_id:02d}.mp3'
+              encoded = base64.b64encode(audio_path.read_bytes()).decode('ascii')
+              remote = (
+                  'https://raw.githubusercontent.com/NKladis17/ai-engineering-lab/'
+                  f'main/docs/spanish-micro-learning/audio/card_{card_id:02d}.mp3'
+              )
+              if remote not in html:
+                  raise RuntimeError(f'Missing audio URL for Card {card_id}')
+              html = html.replace(remote, f'data:audio/mpeg;base64,{encoded}', 1)
+
+          output = root / 'index.html'
+          output.write_text(html, encoding='utf-8')
+          template.unlink()
+          PY
+
+      - name: Validate completed deck
+        shell: bash
+        run: |
+          set -euo pipefail
+          for id in 12 13 14 15 16; do
+            file="docs/spanish-micro-learning/audio/card_${id}.mp3"
+            test -f "$file"
+            test "$(wc -c < "$file")" -gt 15000
+            ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file"
+          done
+          test "$(grep -o 'data:audio/mpeg;base64,' docs/spanish-micro-learning/index.html | wc -l)" -eq 16
+          test "$(grep -o 'class="page page-' docs/spanish-micro-learning/index.html | wc -l)" -eq 16
+          test "$(grep -o 'class="card-audio"' docs/spanish-micro-learning/index.html | wc -l)" -eq 16
+          ! grep -q 'raw.githubusercontent.com' docs/spanish-micro-learning/index.html
+          grep -q 'Card 16 of 16' docs/spanish-micro-learning/index.html
+          test "$(wc -c < docs/spanish-micro-learning/index.html)" -gt 1800000
+
+      - name: Commit completed deck
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/spanish-micro-learning/audio/card_{12..16}.mp3 docs/spanish-micro-learning/index.html
+          git diff --cached --quiet && exit 0
+          git commit -m 'Extend Spanish micro-learning deck to Cards 1-16 [skip ci]'
+          git push
+
+      - name: Upload completed HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spanish-Micro-Learning-Cards-1-16
+          path: docs/spanish-micro-learning/index.html
+          if-no-files-found: error
+          retention-days: 30
