@@ -1,0 +1,97 @@
+name: Generate Spanish micro-learning audio 7-11
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/generate-spanish-micro-audio-7-11.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install neural speech and ffmpeg
+        run: |
+          pip install --disable-pip-version-check edge-tts
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Generate five Spanish recordings
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/spanish-micro-learning/audio
+
+          python - <<'PY'
+          import asyncio
+          from pathlib import Path
+          import edge_tts
+
+          voice = 'es-ES-AlvaroNeural'
+          sentences = {
+              7: 'No hace falta que lo decidamos ahora mismo; podemos dejarlo reposar y retomarlo mañana con la cabeza más fría.',
+              8: 'Reconozco que podría haberlo gestionado mejor, pero en aquel momento hice lo que me pareció más razonable.',
+              9: 'Cuando dices que no te convence, ¿te refieres al planteamiento en sí o a la manera de llevarlo a cabo?',
+              10: 'Me cuesta entender que sigamos dándole vueltas a lo mismo sin llegar a ninguna conclusión.',
+              11: 'Puede que tengas razón en parte, pero aun así creo que nos convendría probarlo antes de descartarlo.',
+          }
+
+          async def make(card_id: int, text: str) -> None:
+              target = Path('docs/spanish-micro-learning/audio') / f'card_{card_id:02d}_raw.mp3'
+              speech = edge_tts.Communicate(
+                  text=text,
+                  voice=voice,
+                  rate='+0%',
+                  volume='+0%',
+                  pitch='-2Hz',
+              )
+              await speech.save(str(target))
+
+          async def main() -> None:
+              for card_id, text in sentences.items():
+                  await make(card_id, text)
+
+          asyncio.run(main())
+          PY
+
+          for raw in docs/spanish-micro-learning/audio/card_{07..11}_raw.mp3; do
+            final="${raw/_raw/}"
+            ffmpeg -hide_banner -loglevel error -y -i "$raw" \
+              -af "silenceremove=start_periods=1:start_silence=0.04:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_silence=0.10:start_threshold=-50dB,areverse,loudnorm=I=-16:TP=-1.5:LRA=8" \
+              -codec:a libmp3lame -b:a 192k "$final"
+            rm "$raw"
+          done
+
+      - name: Validate generated audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          for id in 07 08 09 10 11; do
+            file="docs/spanish-micro-learning/audio/card_${id}.mp3"
+            test -f "$file"
+            test "$(wc -c < "$file")" -gt 15000
+            ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file"
+          done
+
+      - name: Commit generated audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/spanish-micro-learning/audio/card_{07..11}.mp3
+          git diff --cached --quiet && exit 0
+          git commit -m 'Add neural Spanish audio for micro-learning cards 7-11 [skip ci]'
+          git push
