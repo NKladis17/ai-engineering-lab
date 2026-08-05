@@ -1,7 +1,7 @@
 {
   "voice": "es-ES-AlvaroNeural",
   "locale": "Spanish (Spain)",
-  "cards": 6,
+  "cards": 11,
   "defaultPlaybackRate": 0.85,
   "normalPlaybackRate": 1.0
 }
