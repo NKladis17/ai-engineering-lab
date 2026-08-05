@@ -1,0 +1,71 @@
+name: Build Spanish micro-learning cards 1-11
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-spanish-micro-cards-1-11.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download the exact Cards 1-11 template
+        run: |
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://at.adobe.com/5oGS4mSO53bucwmQ' \
+            -o Spanish_Micro_Learning_Cards_1_to_11_PERFECT_AUDIO.html
+
+      - name: Embed neural audio for Cards 7-11
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          html_path = Path('Spanish_Micro_Learning_Cards_1_to_11_PERFECT_AUDIO.html')
+          text = html_path.read_text(encoding='utf-8')
+
+          for card_id in range(7, 12):
+              token = f'__AUDIO_{card_id:02d}__'
+              audio_path = Path('docs/spanish-micro-learning/audio') / f'card_{card_id:02d}.mp3'
+              if not audio_path.exists():
+                  raise FileNotFoundError(audio_path)
+              encoded = base64.b64encode(audio_path.read_bytes()).decode('ascii')
+              if token not in text:
+                  raise RuntimeError(f'Missing token: {token}')
+              text = text.replace(token, encoded, 1)
+
+          html_path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate the completed deck
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('Spanish_Micro_Learning_Cards_1_to_11_PERFECT_AUDIO.html')
+          text = path.read_text(encoding='utf-8')
+
+          assert text.count('class="page page-') == 11
+          assert text.count('class="card-audio"') == 11
+          assert text.count('Reveal the learning layer') == 11
+          assert text.count('How solid does this feel?') == 11
+          assert text.count('data:audio/mpeg;base64,') == 11
+          assert '__AUDIO_' not in text
+          assert path.stat().st_size > 1_000_000
+          print(f'Validated {path.name}: {path.stat().st_size} bytes')
+          PY
+
+      - name: Upload the finished self-contained HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spanish-Micro-Learning-Cards-1-11
+          path: Spanish_Micro_Learning_Cards_1_to_11_PERFECT_AUDIO.html
+          if-no-files-found: error
