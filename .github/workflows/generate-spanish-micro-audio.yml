@@ -28,11 +28,12 @@ jobs:
           sudo apt-get install -y ffmpeg
           pip install --disable-pip-version-check edge-tts
 
-      - name: Generate six Spanish recordings
+      - name: Generate eleven Spanish recordings
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p docs/spanish-micro-learning/audio
+          rm -f docs/spanish-micro-learning/audio/card_*.mp3
 
           python - <<'PY'
           import asyncio
@@ -47,6 +48,11 @@ jobs:
               4: 'Perdona que te interrumpa, pero hay un detalle importante que deberíamos tener en cuenta.',
               5: 'Si estuviera en tu lugar, empezaría por la opción más sencilla.',
               6: 'Menos mal que me avisaste; si no, habría llegado al lugar equivocado.',
+              7: 'No quiero que esto se convierta en una discusión; prefiero que intentemos entendernos.',
+              8: 'No es que no quisiera contestarte; es que necesitaba aclarar algunas cosas antes de hacerlo.',
+              9: 'Haré todo lo posible por terminarlo hoy, aunque no puedo prometerte que esté listo a tiempo.',
+              10: 'De haber sabido que ibas a venir, habría organizado el día de otra manera.',
+              11: 'Podríamos dejarlo así por ahora, siempre que revisemos los detalles más adelante.',
           }
 
           async def make(card_id: int, text: str) -> None:
@@ -79,7 +85,7 @@ jobs:
           {
             "voice": "es-ES-AlvaroNeural",
             "locale": "Spanish (Spain)",
-            "cards": 6,
+            "cards": 11,
             "defaultPlaybackRate": 0.85,
             "normalPlaybackRate": 1.0
           }
@@ -90,10 +96,10 @@ jobs:
         run: |
           set -euo pipefail
           curl -L --fail --retry 3 --retry-delay 2 \
-            'https://at.adobe.com/2r6n06jdsKq7O5LU' \
+            'https://at.adobe.com/Sdqknw4YFk6KkF4C' \
             -o docs/spanish-micro-learning/index.template.html
 
-          grep -q 'Spanish Micro-Learning Cards 1–6' docs/spanish-micro-learning/index.template.html
+          grep -q 'Spanish Micro-Learning Cards 1–11' docs/spanish-micro-learning/index.template.html
 
           python - <<'PY'
           from pathlib import Path
@@ -103,7 +109,7 @@ jobs:
           template = root / 'index.template.html'
           html = template.read_text(encoding='utf-8')
 
-          for card_id in range(1, 7):
+          for card_id in range(1, 12):
               audio_path = root / 'audio' / f'card_{card_id:02d}.mp3'
               encoded = base64.b64encode(audio_path.read_bytes()).decode('ascii')
               remote = (
@@ -124,14 +130,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(find docs/spanish-micro-learning/audio -name 'card_*.mp3' | wc -l)" -eq 6
+          test "$(find docs/spanish-micro-learning/audio -name 'card_*.mp3' | wc -l)" -eq 11
           for file in docs/spanish-micro-learning/audio/card_*.mp3; do
             test "$(wc -c < "$file")" -gt 15000
             ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file"
           done
-          test "$(grep -o 'data:audio/mpeg;base64,' docs/spanish-micro-learning/index.html | wc -l)" -eq 6
+          test "$(grep -o 'data:audio/mpeg;base64,' docs/spanish-micro-learning/index.html | wc -l)" -eq 11
           ! grep -q 'raw.githubusercontent.com' docs/spanish-micro-learning/index.html
-          test "$(wc -c < docs/spanish-micro-learning/index.html)" -gt 500000
+          test "$(grep -o 'class="page page-' docs/spanish-micro-learning/index.html | wc -l)" -eq 11
+          test "$(wc -c < docs/spanish-micro-learning/index.html)" -gt 900000
 
       - name: Commit completed deck
         shell: bash
@@ -141,13 +148,13 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/spanish-micro-learning
           git diff --cached --quiet && exit 0
-          git commit -m 'Complete Spanish micro-learning cards 1-6 with neural audio [skip ci]'
+          git commit -m 'Extend Spanish micro-learning deck to cards 1-11 with neural audio [skip ci]'
           git push
 
       - name: Upload completed HTML
         uses: actions/upload-artifact@v4
         with:
-          name: Spanish-Micro-Learning-Cards-1-6
+          name: Spanish-Micro-Learning-Cards-1-11
           path: docs/spanish-micro-learning/index.html
           if-no-files-found: error
           retention-days: 30
